@@ -498,8 +498,14 @@ requestRoutes.put<{ requestId: string }>(
         request.requestedBy = requestUser as User;
 
         const requestedSeasons = req.body.seasons as number[] | undefined;
+        const requestedEpisodes = req.body.episodes as
+          | { seasonNumber: number; episodeNumber: number }[]
+          | undefined;
 
-        if (!requestedSeasons || requestedSeasons.length === 0) {
+        if (
+          (!requestedSeasons || requestedSeasons.length === 0) &&
+          (!requestedEpisodes || requestedEpisodes.length === 0)
+        ) {
           throw new Error(
             'Missing seasons. If you want to cancel a series request, use the DELETE method.'
           );
@@ -528,7 +534,7 @@ requestRoutes.put<{ requestId: string }>(
             return [...seasons, ...combinedSeasons];
           }, [] as number[]);
 
-        const filteredSeasons = requestedSeasons.filter(
+        const filteredSeasons = (requestedSeasons ?? []).filter(
           (rs) => !existingSeasons.includes(rs)
         );
 
@@ -539,12 +545,12 @@ requestRoutes.put<{ requestId: string }>(
           });
         }
 
-        const newSeasons = requestedSeasons.filter(
+        const newSeasons = (requestedSeasons ?? []).filter(
           (sn) => !request.seasons.map((s) => s.seasonNumber).includes(sn)
         );
 
-        request.seasons = request.seasons.filter((rs) =>
-          filteredSeasons.includes(rs.seasonNumber)
+        request.seasons = request.seasons.filter(
+          (rs) => !requestedSeasons || filteredSeasons.includes(rs.seasonNumber)
         );
 
         if (newSeasons.length > 0) {
