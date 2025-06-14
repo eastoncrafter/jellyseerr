@@ -298,6 +298,37 @@ class SonarrAPI extends ServarrBase<{
     }
   }
 
+  public async getEpisodes(seriesId: number): Promise<EpisodeResult[]> {
+    try {
+      const response = await this.axios.get<EpisodeResult[]>('/episode', {
+        params: { seriesId },
+      });
+
+      return response.data;
+    } catch (e) {
+      logger.error('Error retrieving episodes from Sonarr', {
+        label: 'Sonarr API',
+        errorMessage: e.message,
+        seriesId,
+      });
+      throw new Error('Failed to retrieve episodes');
+    }
+  }
+
+  public async updateEpisodes(
+    episodes: Partial<EpisodeResult>[]
+  ): Promise<void> {
+    try {
+      await this.axios.put('/episode/bulk', episodes);
+    } catch (e) {
+      logger.error('Error updating episodes in Sonarr', {
+        label: 'Sonarr API',
+        errorMessage: e.message,
+      });
+      throw new Error('Failed to update episodes');
+    }
+  }
+
   public async searchSeries(seriesId: number): Promise<void> {
     logger.info('Executing series search command.', {
       label: 'Sonarr API',

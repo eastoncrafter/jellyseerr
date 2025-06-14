@@ -13,6 +13,7 @@ import {
   MediaType,
 } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
+import EpisodeRequest from '@server/entity/EpisodeRequest';
 import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
 import SeasonRequest from '@server/entity/SeasonRequest';
@@ -626,6 +627,23 @@ export class MediaRequestSubscriber
             media[entity.is4k ? 'serviceId4k' : 'serviceId'] =
               sonarrSettings?.id;
             await mediaRepository.save(media);
+
+            if (entity.episodes.length > 0) {
+              const allEpisodes = await sonarr.getEpisodes(sonarrSeries.id!);
+              const updates = entity.episodes
+                .map((ep) => {
+                  const match = allEpisodes.find(
+                    (e) =>
+                      e.seasonNumber === ep.seasonNumber &&
+                      e.episodeNumber === ep.episodeNumber
+                  );
+                  return match ? { id: match.id, monitored: true } : null;
+                })
+                .filter(Boolean) as { id: number; monitored: boolean }[];
+              if (updates.length > 0) {
+                await sonarr.updateEpisodes(updates);
+              }
+            }
           })
           .catch(async () => {
             const requestRepository = getRepository(MediaRequest);
@@ -738,6 +756,10 @@ export class MediaRequestSubscriber
       entity.seasons.forEach((season) => {
         season.status = MediaRequestStatus.APPROVED;
         seasonRequestRepository.save(season);
+      });
+      entity.episodes.forEach((episode) => {
+        episode.status = MediaRequestStatus.APPROVED;
+        getRepository(EpisodeRequest).save(episode);
       });
     }
   }

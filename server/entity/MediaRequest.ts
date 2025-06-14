@@ -26,6 +26,7 @@ import {
   PrimaryGeneratedColumn,
   RelationCount,
 } from 'typeorm';
+import EpisodeRequest from './EpisodeRequest';
 import Media from './Media';
 import SeasonRequest from './SeasonRequest';
 import { User } from './User';
@@ -385,11 +386,17 @@ export class MediaRequest {
               .filter((season) => season.season_number !== 0)
               .map((season) => season.season_number)
           : (requestBody.seasons as number[]);
+      let requestedEpisodes = requestBody.episodes ?? [];
       if (!settings.main.enableSpecialEpisodes) {
         requestedSeasons = requestedSeasons.filter((sn) => sn > 0);
+        requestedEpisodes = requestedEpisodes.filter(
+          (ep) => ep.seasonNumber > 0
+        );
       }
 
       let existingSeasons: number[] = [];
+      let existingEpisodes: { seasonNumber: number; episodeNumber: number }[] =
+        [];
 
       // We need to check existing requests on this title to make sure we don't double up on seasons that were
       // already requested. In the case they were, we just throw out any duplicates but still approve the request.
@@ -406,6 +413,14 @@ export class MediaRequest {
             const combinedSeasons = request.seasons.map(
               (season) => season.seasonNumber
             );
+
+            existingEpisodes = [
+              ...existingEpisodes,
+              ...request.episodes.map((ep) => ({
+                seasonNumber: ep.seasonNumber,
+                episodeNumber: ep.episodeNumber,
+              })),
+            ];
 
             return [...seasons, ...combinedSeasons];
           }, [] as number[]);
@@ -430,12 +445,22 @@ export class MediaRequest {
       const finalSeasons = requestedSeasons.filter(
         (rs) => !existingSeasons.includes(rs)
       );
+      const finalEpisodes = requestedEpisodes.filter(
+        (re) =>
+          !existingEpisodes.some(
+            (ep) =>
+              ep.seasonNumber === re.seasonNumber &&
+              ep.episodeNumber === re.episodeNumber
+          )
+      );
 
-      if (finalSeasons.length === 0) {
-        throw new NoSeasonsAvailableError('No seasons available to request');
+      if (finalSeasons.length === 0 && finalEpisodes.length === 0) {
+        throw new NoSeasonsAvailableError(
+          'No seasons or episodes available to request'
+        );
       } else if (
         quotas.tv.limit &&
-        finalSeasons.length > (quotas.tv.remaining ?? 0)
+        finalSeasons.length + finalEpisodes.length > (quotas.tv.remaining ?? 0)
       ) {
         throw new QuotaRestrictedError('Series Quota exceeded.');
       }
@@ -485,6 +510,27 @@ export class MediaRequest {
           (sn) =>
             new SeasonRequest({
               seasonNumber: sn,
+              status: user.hasPermission(
+                [
+                  requestBody.is4k
+                    ? Permission.AUTO_APPROVE_4K
+                    : Permission.AUTO_APPROVE,
+                  requestBody.is4k
+                    ? Permission.AUTO_APPROVE_4K_TV
+                    : Permission.AUTO_APPROVE_TV,
+                  Permission.MANAGE_REQUESTS,
+                ],
+                { type: 'or' }
+              )
+                ? MediaRequestStatus.APPROVED
+                : MediaRequestStatus.PENDING,
+            })
+        ),
+        episodes: finalEpisodes.map(
+          (ep) =>
+            new EpisodeRequest({
+              seasonNumber: ep.seasonNumber,
+              episodeNumber: ep.episodeNumber,
               status: user.hasPermission(
                 [
                   requestBody.is4k
@@ -556,6 +602,12 @@ export class MediaRequest {
     cascade: true,
   })
   public seasons: SeasonRequest[];
+
+  @OneToMany(() => EpisodeRequest, (episode) => episode.request, {
+    eager: true,
+    cascade: true,
+  })
+  public episodes: EpisodeRequest[];
 
   @Column({ default: false })
   public is4k: boolean;
@@ -707,6 +759,9 @@ export class MediaRequest {
     if (Array.isArray(this.seasons)) {
       this.seasons.sort((a, b) => a.id - b.id);
     }
+    if (Array.isArray(this.episodes)) {
+      this.episodes.sort((a, b) => a.id - b.id);
+    }
   }
 
   static async sendNotification(
@@ -793,6 +848,12 @@ export class MediaRequest {
               name: 'Requested Seasons',
               value: entity.seasons
                 .map((season) => season.seasonNumber)
+                .join(', '),
+            },
+            {
+              name: 'Requested Episodes',
+              value: entity.episodes
+                .map((ep) => `S${ep.seasonNumber}E${ep.episodeNumber}`)
                 .join(', '),
             },
           ],

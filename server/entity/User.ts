@@ -24,6 +24,7 @@ import {
   PrimaryGeneratedColumn,
   RelationCount,
 } from 'typeorm';
+import EpisodeRequest from './EpisodeRequest';
 import Issue from './Issue';
 import { MediaRequest } from './MediaRequest';
 import SeasonRequest from './SeasonRequest';
@@ -330,8 +331,19 @@ export class User {
                 .leftJoin('season.request', 'parentRequest')
                 .where('parentRequest.id = request.id');
             }, 'seasonCount')
+            .addSelect((subQuery) => {
+              return subQuery
+                .select('COUNT(episode.id)', 'episodeCount')
+                .from(EpisodeRequest, 'episode')
+                .leftJoin('episode.request', 'parentRequest2')
+                .where('parentRequest2.id = request.id');
+            }, 'episodeCount')
             .getMany()
-        ).reduce((sum: number, req: MediaRequest) => sum + req.seasonCount, 0)
+        ).reduce(
+          (sum: number, req: MediaRequest) =>
+            sum + req.seasonCount + (req as any).episodeCount,
+          0
+        )
       : 0;
 
     return {
