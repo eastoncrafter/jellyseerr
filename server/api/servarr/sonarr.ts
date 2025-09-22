@@ -318,6 +318,59 @@ class SonarrAPI extends ServarrBase<{
     }
   }
 
+  public async getEpisodesBySeriesId(
+    seriesId: number
+  ): Promise<EpisodeResult[]> {
+    try {
+      const response = await this.axios.get<EpisodeResult[]>('/episode', {
+        params: { seriesId },
+      });
+
+      return response.data;
+    } catch (e) {
+      logger.error('Failed to retrieve episodes from Sonarr', {
+        label: 'Sonarr API',
+        errorMessage: e.message,
+        seriesId,
+      });
+      throw new Error('Failed to retrieve episodes');
+    }
+  }
+
+  public async editEpisode(
+    id: number,
+    episode: Partial<EpisodeResult>
+  ): Promise<EpisodeResult> {
+    try {
+      const response = await this.axios.put<EpisodeResult>(`/episode/${id}`, episode);
+      return response.data;
+    } catch (e) {
+      logger.error('Failed to update episode in Sonarr', {
+        label: 'Sonarr API',
+        errorMessage: e.message,
+        episodeId: id,
+      });
+      throw new Error('Failed to update episode');
+    }
+  }
+
+  public async searchEpisodes(episodeIds: number[]): Promise<void> {
+    if (!episodeIds.length) return;
+    logger.info('Executing episode search command.', {
+      label: 'Sonarr API',
+      episodeIds,
+    });
+    try {
+      await this.runCommand('EpisodeSearch', { episodeIds });
+    } catch (e) {
+      logger.error('Failed to run Sonarr episode search.', {
+        label: 'Sonarr API',
+        errorMessage: e.message,
+        episodeIds,
+      });
+    }
+  }
+
   private buildSeasonList(
     seasons: number[],
     existingSeasons?: SonarrSeason[]

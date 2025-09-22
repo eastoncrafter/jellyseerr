@@ -16,6 +16,7 @@ import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
 import SeasonRequest from '@server/entity/SeasonRequest';
+import EpisodeRequest from '@server/entity/EpisodeRequest';
 import notificationManager, { Notification } from '@server/lib/notifications';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
@@ -639,7 +640,12 @@ export class MediaRequestSubscriber
           rootFolderPath: rootFolder,
           title: series.name,
           tvdbid: tvdbId,
-          seasons: entity.seasons.map((season) => season.seasonNumber),
+          seasons: Array.from(
+            new Set([
+              ...entity.seasons.map((season) => season.seasonNumber),
+              ...entity.episodes.map((ep) => ep.seasonNumber),
+            ])
+          ),
           seasonFolder: sonarrSettings.enableSeasonFolders,
           seriesType,
           tags,
@@ -669,6 +675,24 @@ export class MediaRequestSubscriber
             media[entity.is4k ? 'serviceId4k' : 'serviceId'] =
               sonarrSettings?.id;
             await mediaRepository.save(media);
+
+            if (entity.episodes && entity.episodes.length > 0) {
+              const episodes = await sonarr.getEpisodesBySeriesId(sonarrSeries.id);
+              const toUpdate = episodes.filter((ep) =>
+                entity.episodes.some(
+                  (req) =>
+                    req.seasonNumber === ep.seasonNumber &&
+                    req.episodeNumber === ep.episodeNumber
+                )
+              );
+
+              for (const ep of toUpdate) {
+                await sonarr.editEpisode(ep.id, { monitored: true });
+              }
+              if (toUpdate.length && !sonarrSettings.preventSearch) {
+                await sonarr.searchEpisodes(toUpdate.map((e) => e.id));
+              }
+            }
           })
           .catch(async () => {
             const requestRepository = getRepository(MediaRequest);
