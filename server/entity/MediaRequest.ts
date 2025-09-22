@@ -28,6 +28,7 @@ import {
 } from 'typeorm';
 import Media from './Media';
 import SeasonRequest from './SeasonRequest';
+import EpisodeRequest from './EpisodeRequest';
 import { User } from './User';
 
 export class RequestPermissionError extends Error {}
@@ -501,6 +502,27 @@ export class MediaRequest {
                 : MediaRequestStatus.PENDING,
             })
         ),
+        episodes: (requestBody.episodes ?? []).map(
+          (ep) =>
+            new EpisodeRequest({
+              seasonNumber: ep.seasonNumber,
+              episodeNumber: ep.episodeNumber,
+              status: user.hasPermission(
+                [
+                  requestBody.is4k
+                    ? Permission.AUTO_APPROVE_4K
+                    : Permission.AUTO_APPROVE,
+                  requestBody.is4k
+                    ? Permission.AUTO_APPROVE_4K_TV
+                    : Permission.AUTO_APPROVE_TV,
+                  Permission.MANAGE_REQUESTS,
+                ],
+                { type: 'or' }
+              )
+                ? MediaRequestStatus.APPROVED
+                : MediaRequestStatus.PENDING,
+            })
+        ),
         isAutoRequest: options.isAutoRequest ?? false,
       });
 
@@ -556,6 +578,15 @@ export class MediaRequest {
     cascade: true,
   })
   public seasons: SeasonRequest[];
+
+  @RelationCount((request: MediaRequest) => request.episodes)
+  public episodeCount: number;
+
+  @OneToMany(() => EpisodeRequest, (episode) => episode.request, {
+    eager: true,
+    cascade: true,
+  })
+  public episodes: EpisodeRequest[];
 
   @Column({ default: false })
   public is4k: boolean;

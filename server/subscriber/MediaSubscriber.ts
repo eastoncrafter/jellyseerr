@@ -8,6 +8,7 @@ import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
 import Season from '@server/entity/Season';
 import SeasonRequest from '@server/entity/SeasonRequest';
+import EpisodeRequest from '@server/entity/EpisodeRequest';
 import type { EntitySubscriberInterface, UpdateEvent } from 'typeorm';
 import { EventSubscriber } from 'typeorm';
 
@@ -108,7 +109,42 @@ export class MediaSubscriber implements EntitySubscriberInterface<Media> {
           );
 
           const allSeasonsReady = allSeasonResults.every((result) => result);
-          shouldComplete = allSeasonsReady;
+
+          const allEpisodeResults = await Promise.all(
+            (request.episodes ?? []).map(async (reqEpisode) => {
+              const matchingSeason = event.seasons.find(
+                (mediaSeason) =>
+                  mediaSeason.seasonNumber === reqEpisode.seasonNumber
+              );
+
+              if (!matchingSeason) {
+                return false;
+              }
+
+              const currentSeasonStatus =
+                matchingSeason[request.is4k ? 'status4k' : 'status'];
+
+              const shouldUpdate =
+                currentSeasonStatus === MediaStatus.AVAILABLE ||
+                currentSeasonStatus === MediaStatus.DELETED;
+
+              if (shouldUpdate) {
+                const episodeRepo = getRepository(EpisodeRequest);
+                reqEpisode.status = MediaRequestStatus.COMPLETED;
+                await episodeRepo.save(reqEpisode);
+                return true;
+              }
+
+              return false;
+            })
+          );
+
+          const allEpisodesReady =
+            allEpisodeResults.length > 0
+              ? allEpisodeResults.every((result) => result)
+              : true;
+
+          shouldComplete = allSeasonsReady && allEpisodesReady;
         }
 
         if (shouldComplete) {
